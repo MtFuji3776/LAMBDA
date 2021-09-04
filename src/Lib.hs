@@ -5,6 +5,9 @@ module Lib
     , decodePair
     , encodeFinSet
     , decodeFinSet
+    , graphN
+    , graph
+    , fun
     ) where
 
 import Data.Set (Set)
@@ -65,6 +68,10 @@ graphN f n =
         es   = S.toList . f $ e_n
     in S.fromList [encodePair n m | m <- es]
 
+-- 無限ループするので注意
+graph :: (Num a, Integral a) => (Set a -> Set a) -> Set a
+graph f = S.foldr (<>) S.empty $ S.map (graphN f) [0..]
+
 fun :: (Num a , Integral a) => Set a -> (Set a -> Set a)
 fun u x =
     let x' = S.map decodePair x -- まずxの元をペアに変換
@@ -76,3 +83,68 @@ fun u x =
 -- ℕの部分集合はℕ上の二項関係と自然に同一視できる、という性質とfunの定義が関係している気がする。
 
 --fun u x = S.fromList [m | e_n <- S.toList (S.powerSet u), let n = encodeFinSet e_n,   m <- S.toList $ S.filter (\t -> S.member (encodePair n t) x) [0..n] ]
+
+data Lambda_ a = 
+      Bottom
+    | Zero 
+    | Var a 
+    | Succ (Lambda_ a )
+    | Decl (Lambda_ a )
+    | Cond (Lambda_ a) (Lambda_ a) (Lambda_ a)
+    | Apply (Lambda_ a) (Lambda_ a)
+    | Abst a (Lambda_ a)
+        deriving (Eq)
+
+instance Show a => Show (Lambda_ a) where
+    show Bottom = "⊥"
+    show Zero   = "0"
+    show (Var x)= show x
+    show (Succ x) = (show x) ++ " + 1"
+    show (Decl x) = (show x) ++ " - 1"
+    show (Cond z x y) = "if " ++ (show z) ++ " == 0 then " ++ show x ++ " else " ++ show y
+    show (Apply x y)  = show x ++ "(" ++ show y ++ ")"
+    show (Abst x l)   = "λ" ++ show x ++ "." ++ show l
+
+instance Functor Lambda_ where
+    fmap f (Var x)      = Var $ f x
+    fmap f (Abst x l)   = Abst (f x) (fmap f l)
+    fmap f (Succ l)     = Succ $ fmap f l
+    fmap f (Decl l)     = Decl $ fmap f l
+    fmap f (Cond z x y) = Cond (fmap f z) (fmap f x) (fmap f y)
+    fmap f (Apply x y)  = Apply (fmap f x) (fmap f y)
+
+
+substitute :: Eq a => a -> Lambda_ a -> Lambda_ a -> Lambda_ a
+substitute k l m =
+    let sub z = substitute k z m in
+    case l of 
+        Bottom -> Bottom
+        Zero   -> Zero
+        Var x  -> if x == k then m else Var x
+        Succ x -> Succ $ sub x
+        Decl x -> Decl $ sub x
+        Cond z x y -> Cond (sub z) (sub x) (sub y)
+        Apply x y  -> Apply (sub x) (sub y)
+        Abst o x   -> if o == k then Abst o x else Abst o (substitute k x m)
+
+type Lambda = Lambda_ (Set Int)
+
+-- data IntSetVari = Set Int | Vari Int deriving(Eq,Shoi)
+
+eval :: Lambda -> Set Int
+eval Bottom   = S.empty
+eval Zero     = [0]
+eval (Var n)  = n
+eval (Succ x) = S.map (+1) $ eval x
+eval (Cond z x y)
+    | null (eval z)          = S.empty
+    | z == Zero              = eval x
+    | S.notMember 0 (eval z) = eval y
+    | otherwise              = eval x <> eval y
+eval (Apply x y) = 
+    let x' = eval x
+        y' = eval y
+    in fun x' y'
+eval (Abst n x)  = 
+    let f k = eval $ substitute n x (Var k)
+    in graph f
