@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedLists #-}
 module Lib
     ( encodePair
     , encodePair'
@@ -54,3 +55,24 @@ decodeFinSet n =
             | even m    = decodeFinSet_ (div m 2) (c+1) s
             | otherwise = decodeFinSet_ (m-1) c (S.insert c s)
     in decodeFinSet_ n 0 S.empty
+
+-- ℕの冪集合上のScott連続関数は、写像としてのグラフを介して自然数の冪集合の元と標準的に同一視できる
+    -- この関数は各自然数n毎にグラフの部分集合を返す関数。[0..]にでもmapすればgraphの全体が得られる
+    -- f e_nが無限集合の場合はこの関数でも無限ループする
+graphN :: (Num a,Integral a) => (Set a -> Set a) -> a -> Set a
+graphN f n = 
+    let e_n = decodeFinSet n
+        es   = S.toList . f $ e_n
+    in S.fromList [encodePair n m | m <- es]
+
+fun :: (Num a , Integral a) => Set a -> (Set a -> Set a)
+fun u x =
+    let x' = S.map decodePair x -- まずxの元をペアに変換
+        isIncluded v (n,m) =    -- 集合vとペア(n,m)を渡すと、e_nがvに含まれるかどうか判定する述語
+            let e_n = decodeFinSet n
+            in S.isSubsetOf e_n v
+        x'' = S.filter (isIncluded u) x' -- x'の元のうち、ペアの第一成分のdecodeがuに含まれているものだけ残す
+    in S.map snd x'' -- 第二成分だけ取り出して所望の集合を得る
+-- ℕの部分集合はℕ上の二項関係と自然に同一視できる、という性質とfunの定義が関係している気がする。
+
+--fun u x = S.fromList [m | e_n <- S.toList (S.powerSet u), let n = encodeFinSet e_n,   m <- S.toList $ S.filter (\t -> S.member (encodePair n t) x) [0..n] ]
