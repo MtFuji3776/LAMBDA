@@ -12,6 +12,7 @@ module Lib
 
 import Data.Set (Set)
 import qualified Data.Set as S
+import Data.Semigroup
 
 -- ℕの二項積からℕへの全単射。幅優先探索式に添字付けするのがミソ
 encodePair :: (Num a, Integral a) => a -> a -> a
@@ -95,6 +96,11 @@ data Lambda_ a =
     | Abst a (Lambda_ a)
         deriving (Eq)
 
+instance Semigroup (Lambda_ a) where
+    l1 <> l2 = Apply l1 l2
+
+
+
 instance Show a => Show (Lambda_ a) where
     show Bottom = "⊥"
     show Zero   = "0"
@@ -106,12 +112,15 @@ instance Show a => Show (Lambda_ a) where
     show (Abst x l)   = "λ" ++ show x ++ "." ++ show l
 
 instance Functor Lambda_ where
+    fmap f Bottom       = Bottom
+    fmap f Zero         = Zero
     fmap f (Var x)      = Var $ f x
     fmap f (Abst x l)   = Abst (f x) (fmap f l)
     fmap f (Succ l)     = Succ $ fmap f l
     fmap f (Decl l)     = Decl $ fmap f l
     fmap f (Cond z x y) = Cond (fmap f z) (fmap f x) (fmap f y)
     fmap f (Apply x y)  = Apply (fmap f x) (fmap f y)
+
 
 
 substitute :: Eq a => a -> Lambda_ a -> Lambda_ a -> Lambda_ a
@@ -127,6 +136,17 @@ substitute k l m =
         Apply x y  -> Apply (sub x) (sub y)
         Abst o x   -> if o == k then Abst o x else Abst o (substitute k x m)
 
+reduce :: Eq a => Lambda_ a -> Lambda_ a
+reduce Bottom = Bottom
+reduce Zero   = Zero
+reduce (Var x) = Var x
+reduce (Succ x) = Succ $ reduce x
+reduce (Decl x) = Decl $ reduce x
+reduce (Cond z x y) = Cond (reduce z) (reduce x) (reduce y)
+reduce (Apply (Abst n x) y)  = substitute n x y
+reduce (Apply x y) = Apply (reduce x) (reduce y)
+reduce (Abst n x)  = Abst n (reduce x)
+
 type Lambda = Lambda_ (Set Int)
 
 -- data IntSetVari = Set Int | Vari Int deriving(Eq,Shoi)
@@ -136,6 +156,7 @@ eval Bottom   = S.empty
 eval Zero     = [0]
 eval (Var n)  = n
 eval (Succ x) = S.map (+1) $ eval x
+eval (Decl x) = let x' = eval x in S.filter (\n -> S.member (n+1) x') x'
 eval (Cond z x y)
     | null (eval z)          = S.empty
     | z == Zero              = eval x
